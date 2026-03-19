@@ -28,6 +28,28 @@ Add the server to your Claude Desktop config:
 
 Restart Claude Desktop after saving.
 
+## Auto-Save
+
+Stories are automatically persisted to disk on every change (create, edit, delete passage, etc.). On startup, any previously saved stories are reloaded. This means stories survive across Claude Desktop sessions without needing to explicitly export.
+
+**Default save location**: `./stories/` (relative to the server's working directory)
+
+Override with the `TWINE_SAVE_DIR` environment variable:
+
+```json
+{
+  "mcpServers": {
+    "twine": {
+      "command": "node",
+      "args": ["/absolute/path/to/claude-twine2/dist/index.js"],
+      "env": {
+        "TWINE_SAVE_DIR": "/path/to/your/stories"
+      }
+    }
+  }
+}
+```
+
 ## Tools
 
 | Tool | Description |

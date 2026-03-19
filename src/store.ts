@@ -1,7 +1,40 @@
+import * as fs from "fs";
+import * as path from "path";
 import type { TwineStory, TwinePassage } from "./types";
+
+const SAVE_DIR = path.join(process.env.TWINE_SAVE_DIR || path.join(process.cwd(), "stories"));
 
 class StoryStore {
   private stories: Map<string, TwineStory> = new Map();
+
+  constructor() {
+    fs.mkdirSync(SAVE_DIR, { recursive: true });
+    this.loadAll();
+  }
+
+  private savePath(name: string): string {
+    const safe = name.replace(/[<>:"/\\|?*]/g, "_");
+    return path.join(SAVE_DIR, `${safe}.json`);
+  }
+
+  private persist(name: string): void {
+    const story = this.stories.get(name);
+    if (story) {
+      fs.writeFileSync(this.savePath(name), JSON.stringify(story, null, 2), "utf-8");
+    }
+  }
+
+  private loadAll(): void {
+    if (!fs.existsSync(SAVE_DIR)) return;
+    for (const file of fs.readdirSync(SAVE_DIR)) {
+      if (!file.endsWith(".json")) continue;
+      try {
+        const raw = fs.readFileSync(path.join(SAVE_DIR, file), "utf-8");
+        const story: TwineStory = JSON.parse(raw);
+        if (story.name) this.stories.set(story.name, story);
+      } catch { /* skip corrupt files */ }
+    }
+  }
 
   create(name: string, format?: string): TwineStory {
     const story: TwineStory = {
@@ -13,6 +46,7 @@ class StoryStore {
       passages: [],
     };
     this.stories.set(name, story);
+    this.persist(name);
     return story;
   }
 
@@ -26,10 +60,16 @@ class StoryStore {
 
   set(name: string, story: TwineStory): void {
     this.stories.set(name, story);
+    this.persist(name);
   }
 
   delete(name: string): boolean {
-    return this.stories.delete(name);
+    const result = this.stories.delete(name);
+    if (result) {
+      const fp = this.savePath(name);
+      if (fs.existsSync(fp)) fs.unlinkSync(fp);
+    }
+    return result;
   }
 
   addPassage(storyName: string, passage: Omit<TwinePassage, "pid">): TwinePassage {
@@ -47,6 +87,7 @@ class StoryStore {
       story.startPassage = full.name;
     }
 
+    this.persist(storyName);
     return full;
   }
 
@@ -73,6 +114,7 @@ class StoryStore {
     }
 
     story.passages[idx] = { ...story.passages[idx], ...updates };
+    this.persist(storyName);
     return story.passages[idx];
   }
 
@@ -85,6 +127,7 @@ class StoryStore {
     if (story.startPassage === passageName) {
       story.startPassage = story.passages[0]?.name;
     }
+    this.persist(storyName);
     return true;
   }
 
