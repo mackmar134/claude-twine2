@@ -1,0 +1,8 @@
+- This is a TypeScript Node.js MCP server (Model Context Protocol)
+- Gives Claude direct tools to create/edit/export Twine 2 interactive fiction stories
+- Uses @modelcontextprotocol/sdk for MCP, cheerio for HTML parsing, zod for schemas
+- Story formats: Twine 2 HTML and Twee 3 notation
+- Supported Twine formats: Harlowe, SugarCube, Chapbook, Snowman
+- Transport: stdio (launched by Claude Desktop)
+- Dev server: `npm run dev` (ts-node-dev with hot reload)
+- Build: `npm run build` then `npm start`
