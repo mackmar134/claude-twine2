@@ -81,6 +81,11 @@ class StoryStore {
       : 1;
 
     const full: TwinePassage = { ...passage, pid };
+    if (!full.position) {
+      const cols = 5;
+      const idx = story.passages.length;
+      full.position = { x: (idx % cols) * 250, y: Math.floor(idx / cols) * 250 };
+    }
     story.passages.push(full);
 
     if (!story.startPassage) {

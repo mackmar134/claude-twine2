@@ -268,7 +268,7 @@ export function registerTools(server: McpServer): void {
 
   server.tool(
     "export_twee",
-    "Export a story as Twee 3 text file",
+    "Export a story as Twee 3 text file. Note: when importing a Twee file into Twine's editor, all passages will be stacked in one spot — you'll need to manually drag them apart in the visual map.",
     {
       storyName: z.string().describe("Name of the story"),
       filePath: z.string().describe("Absolute file path to save the Twee file"),
@@ -287,7 +287,7 @@ export function registerTools(server: McpServer): void {
 
   server.tool(
     "import_story",
-    "Import a Twine story from an HTML or Twee file on disk",
+    "Import a Twine story from an HTML or Twee file on disk. Note: Twee files imported into Twine's editor will have all passages stacked at one point — drag them apart in the visual map to arrange them.",
     {
       filePath: z.string().describe("Absolute path to a .html or .twee/.tw file"),
     },
@@ -314,7 +314,7 @@ export function registerTools(server: McpServer): void {
 
   server.tool(
     "import_story_from_text",
-    "Import a Twine story from raw HTML or Twee text content",
+    "Import a Twine story from raw HTML or Twee text content. Note: Twee content imported into Twine's editor will have passages stacked together — rearrange them manually in the visual map.",
     {
       content: z.string().describe("Story content as HTML or Twee 3 text"),
       isHtml: z.boolean().optional().describe("True if content is Twine HTML, false/omit for Twee 3"),
