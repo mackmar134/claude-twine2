@@ -2,7 +2,9 @@ import * as fs from "fs";
 import * as path from "path";
 import type { TwineStory, TwinePassage } from "./types";
 
-const SAVE_DIR = path.join(process.env.TWINE_SAVE_DIR || path.join(process.cwd(), "stories"));
+const SAVE_DIR = path.join(
+  process.env.TWINE_SAVE_DIR || path.join(__dirname, "..", "stories")
+);
 
 class StoryStore {
   private stories: Map<string, TwineStory> = new Map();
