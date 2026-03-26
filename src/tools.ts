@@ -2,7 +2,7 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { store } from "./store";
 import { parseHtml, parseTwee, storyToHtml, storyToTwee, extractLinks } from "./twine-parser";
-import type { TwinePassage } from "./types";
+import type { TwinePassage, TwineStory } from "./types";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -331,6 +331,362 @@ export function registerTools(server: McpServer): void {
 
       const output = toFormat === "html" ? storyToHtml(story) : storyToTwee(story);
       return { content: [{ type: "text", text: output }] };
+    }
+  );
+
+  server.tool(
+    "validate_story",
+    "Run comprehensive integrity checks on a story: broken links, empty passages, orphans, dead ends, reachability, duplicate names, missing start passage",
+    {
+      storyName: z.string().describe("Name of the story to validate"),
+    },
+    async ({ storyName }) => {
+      const story = store.get(storyName);
+      if (!story) return { content: [{ type: "text", text: `Story "${storyName}" not found.` }], isError: true };
+
+      const allNames = new Set(story.passages.map((p) => p.name));
+      const issues: string[] = [];
+      let warnings: string[] = [];
+
+      if (!story.startPassage) {
+        issues.push("❌ No start passage set");
+      } else if (!allNames.has(story.startPassage)) {
+        issues.push(`❌ Start passage "${story.startPassage}" does not exist`);
+      }
+
+      const nameCounts = new Map<string, number>();
+      for (const p of story.passages) {
+        nameCounts.set(p.name, (nameCounts.get(p.name) || 0) + 1);
+      }
+      for (const [name, count] of nameCounts) {
+        if (count > 1) issues.push(`❌ Duplicate passage name: "${name}" (${count} copies)`);
+      }
+
+      const brokenLinks: string[] = [];
+      for (const p of story.passages) {
+        for (const link of p.links || []) {
+          if (!allNames.has(link)) {
+            brokenLinks.push(`"${p.name}" → "${link}"`);
+          }
+        }
+      }
+      if (brokenLinks.length) issues.push(`❌ Broken links (${brokenLinks.length}): ${brokenLinks.join("; ")}`);
+
+      const emptyPassages = story.passages.filter((p) => !p.text || p.text.trim() === "");
+      if (emptyPassages.length) {
+        warnings.push(`⚠️ Empty passages (${emptyPassages.length}): ${emptyPassages.map((p) => p.name).join(", ")}`);
+      }
+
+      const deadEnds = story.passages.filter((p) => (!p.links || p.links.length === 0) && p.text && p.text.trim() !== "");
+      if (deadEnds.length) {
+        warnings.push(`⚠️ Dead ends (${deadEnds.length}): ${deadEnds.map((p) => p.name).join(", ")}`);
+      }
+
+      const linkedTo = new Set<string>();
+      for (const p of story.passages) {
+        p.links?.forEach((l) => linkedTo.add(l));
+      }
+      const orphans = story.passages.filter((p) => !linkedTo.has(p.name) && p.name !== story.startPassage);
+
+      const reachable = new Set<string>();
+      if (story.startPassage && allNames.has(story.startPassage)) {
+        const queue = [story.startPassage];
+        while (queue.length > 0) {
+          const current = queue.shift()!;
+          if (reachable.has(current)) continue;
+          reachable.add(current);
+          const passage = story.passages.find((p) => p.name === current);
+          if (passage?.links) {
+            for (const link of passage.links) {
+              if (allNames.has(link) && !reachable.has(link)) queue.push(link);
+            }
+          }
+        }
+        const unreachable = story.passages.filter((p) => !reachable.has(p.name));
+        if (unreachable.length) {
+          warnings.push(`⚠️ Unreachable from start (${unreachable.length}): ${unreachable.map((p) => p.name).join(", ")}`);
+        }
+      }
+
+      if (orphans.length) {
+        warnings.push(`⚠️ Orphan passages — nothing links to them (${orphans.length}): ${orphans.map((p) => p.name).join(", ")}`);
+      }
+
+      const total = story.passages.length;
+      const header = `Validation: "${story.name}" (${total} passages, format: ${story.format || "unknown"})\n`;
+      if (issues.length === 0 && warnings.length === 0) {
+        return { content: [{ type: "text", text: header + "✅ All checks passed — story is clean!" }] };
+      }
+      const result = header + [...issues, ...warnings].join("\n");
+      return { content: [{ type: "text", text: result }], isError: issues.length > 0 };
+    }
+  );
+
+  server.tool(
+    "search_passages",
+    "Search passages by text content, name pattern, tags, or link targets. Searches across one story or all stories.",
+    {
+      query: z.string().describe("Search term (case-insensitive substring match on passage text and names)"),
+      storyName: z.string().optional().describe("Limit search to this story (omit to search all)"),
+      tag: z.string().optional().describe("Filter to passages with this tag"),
+      linkTarget: z.string().optional().describe("Filter to passages that link to this target"),
+    },
+    async ({ query, storyName, tag, linkTarget }) => {
+      const stories = storyName
+        ? [store.get(storyName)].filter(Boolean) as TwineStory[]
+        : store.list().map((n) => store.get(n)!);
+
+      if (stories.length === 0) {
+        return { content: [{ type: "text", text: storyName ? `Story "${storyName}" not found.` : "No stories found." }], isError: true };
+      }
+
+      const queryLower = query.toLowerCase();
+      const results: string[] = [];
+
+      for (const story of stories) {
+        for (const p of story.passages) {
+          const textMatch = p.text.toLowerCase().includes(queryLower) || p.name.toLowerCase().includes(queryLower);
+          const tagMatch = tag ? (p.tags || []).includes(tag) : true;
+          const linkMatch = linkTarget ? (p.links || []).includes(linkTarget) : true;
+
+          if (textMatch && tagMatch && linkMatch) {
+            const preview = p.text.length > 120 ? p.text.slice(0, 120) + "…" : p.text;
+            const tags = p.tags?.length ? ` [${p.tags.join(", ")}]` : "";
+            results.push(`[${story.name}] ${p.name}${tags}: ${preview.replace(/\n/g, " ")}`);
+          }
+        }
+      }
+
+      if (results.length === 0) {
+        return { content: [{ type: "text", text: `No passages match query "${query}".` }] };
+      }
+      return { content: [{ type: "text", text: `Found ${results.length} matching passage(s):\n\n${results.join("\n\n")}` }] };
+    }
+  );
+
+  server.tool(
+    "story_statistics",
+    "Get detailed statistics about a story: word counts, passage counts, branching factor, link density, longest/shortest passages, tag usage",
+    {
+      storyName: z.string().describe("Name of the story"),
+    },
+    async ({ storyName }) => {
+      const story = store.get(storyName);
+      if (!story) return { content: [{ type: "text", text: `Story "${storyName}" not found.` }], isError: true };
+
+      const passages = story.passages;
+      if (passages.length === 0) {
+        return { content: [{ type: "text", text: `"${storyName}" has no passages yet.` }] };
+      }
+
+      const wordCounts = passages.map((p) => {
+        const words = p.text.trim().split(/\s+/).filter(Boolean);
+        return { name: p.name, count: p.text.trim() === "" ? 0 : words.length };
+      });
+      const totalWords = wordCounts.reduce((sum, w) => sum + w.count, 0);
+      const avgWords = Math.round(totalWords / passages.length);
+      const sorted = [...wordCounts].sort((a, b) => b.count - a.count);
+      const longest = sorted[0];
+      const shortest = sorted[sorted.length - 1];
+
+      const totalLinks = passages.reduce((sum, p) => sum + (p.links?.length || 0), 0);
+      const avgBranching = (totalLinks / passages.length).toFixed(1);
+      const maxBranching = passages.reduce((max, p) => Math.max(max, p.links?.length || 0), 0);
+
+      const emptyCount = passages.filter((p) => !p.text || p.text.trim() === "").length;
+      const deadEndCount = passages.filter((p) => !p.links || p.links.length === 0).length;
+
+      const tagCounts = new Map<string, number>();
+      for (const p of passages) {
+        for (const t of p.tags || []) {
+          tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
+        }
+      }
+      const tagLines = [...tagCounts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([tag, count]) => `  ${tag}: ${count}`)
+        .join("\n");
+
+      let maxDepth = 0;
+      const allNames = new Set(passages.map((p) => p.name));
+      if (story.startPassage && allNames.has(story.startPassage)) {
+        const visited = new Set<string>();
+        const queue: { name: string; depth: number }[] = [{ name: story.startPassage, depth: 0 }];
+        while (queue.length > 0) {
+          const { name, depth } = queue.shift()!;
+          if (visited.has(name)) continue;
+          visited.add(name);
+          maxDepth = Math.max(maxDepth, depth);
+          const p = passages.find((pp) => pp.name === name);
+          if (p?.links) {
+            for (const link of p.links) {
+              if (allNames.has(link) && !visited.has(link)) queue.push({ name: link, depth: depth + 1 });
+            }
+          }
+        }
+      }
+
+      const lines = [
+        `📊 Statistics: "${story.name}"`,
+        ``,
+        `Passages: ${passages.length} (${emptyCount} empty, ${deadEndCount} dead ends)`,
+        `Total words: ${totalWords.toLocaleString()}`,
+        `Avg words/passage: ${avgWords}`,
+        `Longest passage: "${longest.name}" (${longest.count} words)`,
+        `Shortest passage: "${shortest.name}" (${shortest.count} words)`,
+        ``,
+        `Total links: ${totalLinks}`,
+        `Avg branching factor: ${avgBranching}`,
+        `Max branching factor: ${maxBranching}`,
+        `Max depth from start: ${maxDepth}`,
+        ``,
+        `Format: ${story.format || "unknown"} ${story.formatVersion || ""}`,
+        `IFID: ${story.ifid || "none"}`,
+      ];
+
+      if (tagCounts.size > 0) {
+        lines.push(``, `Tags:`, tagLines);
+      }
+
+      return { content: [{ type: "text", text: lines.join("\n") }] };
+    }
+  );
+
+  server.tool(
+    "rename_story",
+    "Rename a story (updates in memory and the save file on disk)",
+    {
+      storyName: z.string().describe("Current story name"),
+      newName: z.string().describe("New story name"),
+    },
+    async ({ storyName, newName }) => {
+      try {
+        store.rename(storyName, newName);
+        return { content: [{ type: "text", text: `Renamed "${storyName}" → "${newName}".` }] };
+      } catch (err: any) {
+        return { content: [{ type: "text", text: err.message }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "merge_stories",
+    "Merge all passages from a source story into a target story. Does not overwrite existing passages with the same name.",
+    {
+      targetStory: z.string().describe("Name of the story to merge INTO"),
+      sourceStory: z.string().describe("Name of the story to merge FROM"),
+      deleteSource: z.boolean().optional().describe("Delete the source story after merging (default: false)"),
+    },
+    async ({ targetStory, sourceStory, deleteSource }) => {
+      const target = store.get(targetStory);
+      if (!target) return { content: [{ type: "text", text: `Target story "${targetStory}" not found.` }], isError: true };
+      const source = store.get(sourceStory);
+      if (!source) return { content: [{ type: "text", text: `Source story "${sourceStory}" not found.` }], isError: true };
+
+      const existingNames = new Set(target.passages.map((p) => p.name));
+      let added = 0;
+      let skipped = 0;
+
+      for (const p of source.passages) {
+        if (existingNames.has(p.name)) {
+          skipped++;
+          continue;
+        }
+        store.addPassage(targetStory, { name: p.name, text: p.text, tags: p.tags, links: p.links });
+        added++;
+      }
+
+      if (deleteSource) store.delete(sourceStory);
+
+      return {
+        content: [{ type: "text", text: `Merged into "${targetStory}": ${added} passages added, ${skipped} skipped (duplicate names).${deleteSource ? ` Source "${sourceStory}" deleted.` : ""}` }],
+      };
+    }
+  );
+
+  server.tool(
+    "add_passages_batch",
+    "Add multiple passages to a story in one call. Much faster for building stories.",
+    {
+      storyName: z.string().describe("Name of the story"),
+      passages: z.array(z.object({
+        name: z.string().describe("Passage name"),
+        text: z.string().describe("Passage content with [[link]] syntax"),
+        tags: z.array(z.string()).optional().describe("Tags for this passage"),
+      })).describe("Array of passages to add"),
+    },
+    async ({ storyName, passages: newPassages }) => {
+      const story = store.get(storyName);
+      if (!story) return { content: [{ type: "text", text: `Story "${storyName}" not found.` }], isError: true };
+
+      const results: string[] = [];
+      let added = 0;
+
+      for (const p of newPassages) {
+        try {
+          const links = extractLinks(p.text);
+          store.addPassage(storyName, { name: p.name, text: p.text, tags: p.tags, links });
+          added++;
+        } catch (err: any) {
+          results.push(`⚠️ "${p.name}": ${err.message}`);
+        }
+      }
+
+      const summary = `Added ${added}/${newPassages.length} passages to "${storyName}".`;
+      if (results.length > 0) {
+        return { content: [{ type: "text", text: `${summary}\n${results.join("\n")}` }] };
+      }
+      return { content: [{ type: "text", text: summary }] };
+    }
+  );
+
+  server.tool(
+    "clone_passage",
+    "Duplicate a passage with a new name (in the same story or to another story)",
+    {
+      storyName: z.string().describe("Source story name"),
+      passageName: z.string().describe("Passage to clone"),
+      newName: z.string().describe("Name for the cloned passage"),
+      targetStory: z.string().optional().describe("Clone into a different story (default: same story)"),
+    },
+    async ({ storyName, passageName, newName, targetStory }) => {
+      const source = store.getPassage(storyName, passageName);
+      if (!source) return { content: [{ type: "text", text: `Passage "${passageName}" not found in "${storyName}".` }], isError: true };
+
+      const dest = targetStory || storyName;
+      if (!store.get(dest)) return { content: [{ type: "text", text: `Story "${dest}" not found.` }], isError: true };
+
+      try {
+        store.addPassage(dest, { name: newName, text: source.text, tags: source.tags ? [...source.tags] : undefined, links: source.links ? [...source.links] : undefined });
+        return { content: [{ type: "text", text: `Cloned "${passageName}" → "${newName}" in "${dest}".` }] };
+      } catch (err: any) {
+        return { content: [{ type: "text", text: err.message }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "move_passage",
+    "Move a passage from one story to another (removes from source, adds to target)",
+    {
+      sourceStory: z.string().describe("Story to move FROM"),
+      passageName: z.string().describe("Passage name to move"),
+      targetStory: z.string().describe("Story to move TO"),
+      newName: z.string().optional().describe("Optionally rename the passage during the move"),
+    },
+    async ({ sourceStory, passageName, targetStory, newName }) => {
+      const passage = store.getPassage(sourceStory, passageName);
+      if (!passage) return { content: [{ type: "text", text: `Passage "${passageName}" not found in "${sourceStory}".` }], isError: true };
+      if (!store.get(targetStory)) return { content: [{ type: "text", text: `Story "${targetStory}" not found.` }], isError: true };
+
+      try {
+        const name = newName || passage.name;
+        store.addPassage(targetStory, { name, text: passage.text, tags: passage.tags ? [...passage.tags] : undefined, links: passage.links ? [...passage.links] : undefined });
+        store.deletePassage(sourceStory, passageName);
+        return { content: [{ type: "text", text: `Moved "${passageName}" from "${sourceStory}" to "${targetStory}"${newName ? ` as "${newName}"` : ""}.` }] };
+      } catch (err: any) {
+        return { content: [{ type: "text", text: err.message }], isError: true };
+      }
     }
   );
 }

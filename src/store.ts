@@ -79,6 +79,10 @@ class StoryStore {
     const story = this.stories.get(storyName);
     if (!story) throw new Error(`Story "${storyName}" not found`);
 
+    if (story.passages.some((p) => p.name === passage.name)) {
+      throw new Error(`Passage "${passage.name}" already exists in "${storyName}"`);
+    }
+
     const pid = story.passages.length > 0
       ? Math.max(...story.passages.map((p) => p.pid || 0)) + 1
       : 1;
@@ -139,7 +143,19 @@ class StoryStore {
     return true;
   }
 
+  rename(oldName: string, newName: string): void {
+    const story = this.stories.get(oldName);
+    if (!story) throw new Error(`Story "${oldName}" not found`);
+    if (this.stories.has(newName)) throw new Error(`Story "${newName}" already exists`);
 
+    const oldPath = this.savePath(oldName);
+    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+
+    this.stories.delete(oldName);
+    story.name = newName;
+    this.stories.set(newName, story);
+    this.persist(newName);
+  }
 }
 
 export const store = new StoryStore();
