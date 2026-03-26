@@ -1,25 +1,10 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { store } from "./store";
-import { parseHtml, parseTwee, storyToHtml, storyToTwee } from "./twine-parser";
+import { parseHtml, parseTwee, storyToHtml, storyToTwee, extractLinks } from "./twine-parser";
+import type { TwinePassage } from "./types";
 import * as fs from "fs";
 import * as path from "path";
-
-// Extracts [[link]] targets from passage text
-function extractLinks(text: string): string[] {
-  const links: string[] = [];
-  const re = /\[\[(.*?)\]\]/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    const inner = m[1];
-    const arrow = inner.indexOf("->");
-    const pipe = inner.indexOf("|");
-    if (arrow !== -1) links.push(inner.slice(arrow + 2).trim());
-    else if (pipe !== -1) links.push(inner.slice(pipe + 1).trim());
-    else links.push(inner.trim());
-  }
-  return links;
-}
 
 export function registerTools(server: McpServer): void {
 
@@ -41,7 +26,7 @@ export function registerTools(server: McpServer): void {
 
   server.tool(
     "list_stories",
-    "List all stories in the current session",
+    "List all stories (persisted across sessions — always call this first to see what exists)",
     {},
     async () => {
       const names = store.list();
@@ -119,7 +104,7 @@ export function registerTools(server: McpServer): void {
     },
     async ({ storyName, passageName, newText, newName, tags }) => {
       try {
-        const updates: any = {};
+        const updates: Partial<TwinePassage> = {};
         if (newText !== undefined) {
           updates.text = newText;
           updates.links = extractLinks(newText);
@@ -202,6 +187,7 @@ export function registerTools(server: McpServer): void {
       const passage = story.passages.find((p) => p.name === passageName);
       if (!passage) return { content: [{ type: "text", text: `Passage "${passageName}" not found.` }], isError: true };
       story.startPassage = passageName;
+      store.set(storyName, story);
       return { content: [{ type: "text", text: `Start passage set to "${passageName}".` }] };
     }
   );

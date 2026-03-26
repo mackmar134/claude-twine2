@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import type { TwineStory, TwinePassage } from "./types";
+import { generateIfid } from "./twine-parser";
 
 const SAVE_DIR = path.join(
   process.env.TWINE_SAVE_DIR || path.join(__dirname, "..", "stories")
@@ -41,7 +42,7 @@ class StoryStore {
   create(name: string, format?: string): TwineStory {
     const story: TwineStory = {
       name,
-      ifid: this.generateIfid(),
+      ifid: generateIfid(),
       format: format || "Harlowe",
       formatVersion: format === "SugarCube" ? "2.37.3" : "3.3.9",
       startPassage: undefined,
@@ -138,10 +139,7 @@ class StoryStore {
     return true;
   }
 
-  private generateIfid(): string {
-    const hex = () => Math.floor(Math.random() * 0x10000).toString(16).padStart(4, "0").toUpperCase();
-    return `${hex()}${hex()}-${hex()}-4${hex().slice(1)}-${hex()}-${hex()}${hex()}${hex()}`;
-  }
+
 }
 
 export const store = new StoryStore();

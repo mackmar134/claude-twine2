@@ -1,19 +1,53 @@
-# claude-twine2
+# claude-twine-bridge
 
 MCP server for authoring [Twine 2](https://twinery.org/) interactive fiction stories through Claude. Supports Harlowe, SugarCube, Chapbook, and Snowman story formats with full read/write for both Twine 2 HTML and Twee 3.
 
-## Setup
+## Install
 
 ```bash
-npm install
-npm run build
+npm install -g claude-twine-bridge
 ```
+
+Or run directly with npx (no install needed):
+
+```bash
+npx claude-twine-bridge
+```
+
+## Claude Desktop Setup
 
 Add the server to your Claude Desktop config:
 
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 - **Windows (Store)**: `%LOCALAPPDATA%\Packages\Claude_<id>\LocalCache\Roaming\Claude\claude_desktop_config.json`
+
+**Using npx (recommended — always up to date):**
+
+```json
+{
+  "mcpServers": {
+    "twine": {
+      "command": "npx",
+      "args": ["-y", "claude-twine-bridge"]
+    }
+  }
+}
+```
+
+**Using a global install:**
+
+```json
+{
+  "mcpServers": {
+    "twine": {
+      "command": "claude-twine-bridge"
+    }
+  }
+}
+```
+
+**Using a local clone:**
 
 ```json
 {
@@ -32,7 +66,7 @@ Restart Claude Desktop after saving.
 
 Stories are automatically persisted to disk on every change (create, edit, delete passage, etc.). On startup, any previously saved stories are reloaded. This means stories survive across Claude Desktop sessions without needing to explicitly export.
 
-**Default save location**: `./stories/` (relative to the server's working directory)
+**Default save location**: `stories/` directory next to the installed package
 
 Override with the `TWINE_SAVE_DIR` environment variable:
 
@@ -55,7 +89,7 @@ Override with the `TWINE_SAVE_DIR` environment variable:
 | Tool | Description |
 |------|-------------|
 | `create_story` | Create a new story with a given format |
-| `list_stories` | List stories in the current session |
+| `list_stories` | List all stories (persisted across sessions) |
 | `get_story` | Get full story data as JSON |
 | `delete_story` | Remove a story from the session |
 | `add_passage` | Add a passage with `[[link]]` syntax |

@@ -1,7 +1,7 @@
 import * as cheerio from "cheerio";
 import type { TwineStory, TwinePassage } from "./types";
 
-function extractLinks(text: string): string[] {
+export function extractLinks(text: string): string[] {
   const links: string[] = [];
   const re = /\[\[(.*?)\]\]/g;
   let m: RegExpExecArray | null;
@@ -237,7 +237,7 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function generateIfid(): string {
+export function generateIfid(): string {
   const hex = () => Math.floor(Math.random() * 0x10000).toString(16).padStart(4, "0").toUpperCase();
   return `${hex()}${hex()}-${hex()}-4${hex().slice(1)}-${hex()}-${hex()}${hex()}${hex()}`;
 }

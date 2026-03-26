@@ -1,0 +1,7 @@
+src/
+stories/
+.github/
+.env
+.env.*
+*.tgz
+tsconfig.json
