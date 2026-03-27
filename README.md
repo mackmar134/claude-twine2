@@ -99,6 +99,14 @@ Override with the `TWINE_SAVE_DIR` environment variable:
 | `delete_passage` | Remove a passage |
 | `set_start` | Set the starting passage |
 | `get_story_map` | Show passage graph with dead ends, orphans, and broken links |
+| `validate_story` | Check for broken links, empty passages, orphans, reachability |
+| `search_passages` | Search by text, name, tags, or link targets across stories |
+| `story_statistics` | Word counts, branching factor, depth, tag usage |
+| `rename_story` | Rename a story (updates save file on disk) |
+| `merge_stories` | Combine passages from one story into another |
+| `add_passages_batch` | Add multiple passages in one call |
+| `clone_passage` | Duplicate a passage, optionally to another story |
+| `move_passage` | Move a passage between stories |
 | `export_html` | Save as Twine 2 HTML |
 | `export_twee` | Save as Twee 3 |
 | `import_story` | Load a `.html` or `.twee` file from disk |
