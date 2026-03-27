@@ -1,0 +1,15 @@
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      TWINE_SAVE_DIR:
+        type: string
+        description: Directory to save story JSON files (optional)
+    required: []
+  commandFunction: |-
+    (config) => ({
+      command: 'npx',
+      args: ['-y', 'claude-twine-bridge'],
+      env: config.TWINE_SAVE_DIR ? { TWINE_SAVE_DIR: config.TWINE_SAVE_DIR } : {}
+    })
